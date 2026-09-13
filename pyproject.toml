@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "blh-claude-code"
+version = "0.1.0"
+description = "A coding agent CLI built on OpenAI-compatible APIs"
+requires-python = ">=3.11"
+dependencies = ["openai>=1.40"]
+
+[dependency-groups]
+dev = ["pytest>=8", "ruff>=0.5"]
+
+[project.scripts]
+blh = "blh.cli.main:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+markers = ["live: tests that call a real API (deselect with -m 'not live')"]
