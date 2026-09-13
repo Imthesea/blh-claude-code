@@ -13,6 +13,11 @@ class RetryState:
 
 
 def retry_delay(attempt: int) -> float:
+    """指数退避,封顶 32s。
+
+    已知限制:M0 不读取 429 响应的 Retry-After 头(计划/设计承诺项,
+    推迟到 M1 实现)。
+    """
     return min(2**attempt, 32)
 
 
