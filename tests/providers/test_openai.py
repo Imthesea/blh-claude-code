@@ -79,3 +79,17 @@ def test_chat_gives_up_after_max_attempts(monkeypatch):
         provider.chat([{"role": "user", "content": "hi"}], [])
 
     assert client.chat.completions.calls == 5
+
+
+def test_is_prompt_too_long_matches_400_with_keywords():
+    from blh.providers.openai import is_prompt_too_long
+
+    class FakeBadRequest(Exception):
+        status_code = 400
+
+    assert is_prompt_too_long(FakeBadRequest("prompt_too_long: ..."))
+    assert is_prompt_too_long(FakeBadRequest(
+        "This model's maximum context length is 65536"))
+    assert is_prompt_too_long(FakeBadRequest("too many tokens in prompt"))
+    assert not is_prompt_too_long(FakeBadRequest("invalid api key"))
+    assert not is_prompt_too_long(ValueError("prompt_too_long"))  # 无 400

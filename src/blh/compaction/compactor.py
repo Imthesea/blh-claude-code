@@ -265,7 +265,11 @@ class ContextCompactor:
 
     def prepare(self, messages: list[dict],
                 active_request: str) -> list[dict]:
-        """每次模型调用前执行:低成本可恢复操作优先,模型摘要最后。"""
+        """每次模型调用前执行:低成本可恢复操作优先,模型摘要最后。
+
+        budget/micro/fit 原地修改传入 list,snip/compact_history 返回新 list;
+        返回值为调用方应继续使用的 list,loop 层必须用 ``messages[:] = prepare(...)`` 接收。
+        """
         messages = self.tool_result_budget(messages)
         messages = self.snip_compact(messages)
         if self.estimate_chars(messages) > self.CONTEXT_CHAR_LIMIT:
