@@ -7,3 +7,4 @@ dist/
 .env
 .transcripts/
 .task_outputs/
+.tasks/

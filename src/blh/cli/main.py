@@ -7,6 +7,9 @@ from ..core.config import load_config
 from ..core.harness import Harness
 from ..core.hooks import PRE_TOOL_USE, HookBus
 from ..core.loop import last_assistant_text
+from ..planning.tasks import TaskStore
+from ..planning.todo import TodoManager
+from ..planning.tools import register_planning_tools
 from ..providers.openai import OpenAIProvider
 from ..security.approval import make_permission_hook
 from ..security.rules import DEFAULT_RULES
@@ -22,6 +25,9 @@ def build_harness(workdir: str | None = None) -> Harness:
     register_builtin_tools(tools, config)
     register_compact_tool(tools)
     wd = Path(config.workdir)
+    todo_manager = TodoManager()
+    task_store = TaskStore(wd / ".tasks")
+    register_planning_tools(tools, todo_manager, task_store)
     compactor = ContextCompactor(
         provider,
         transcript_dir=wd / ".transcripts",
@@ -30,7 +36,7 @@ def build_harness(workdir: str | None = None) -> Harness:
     hooks = HookBus()
     hooks.register(
         PRE_TOOL_USE, make_permission_hook(DEFAULT_RULES, config.workdir))
-    return Harness(config, provider, tools, hooks, compactor)
+    return Harness(config, provider, tools, hooks, compactor, todo_manager)
 
 
 def main() -> None:
