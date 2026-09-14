@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from blh.compaction.compactor import ContextCompactor
 
 
@@ -233,3 +235,30 @@ def test_snip_compact_archives_complete_history(tmp_path):
     assert saved_path.is_file()
     assert len(saved_path.read_text(encoding="utf-8").splitlines()) == 10
     assert compactor.snip_compact(list(compacted), max_messages=6) == compacted
+
+
+def test_snip_compact_rejects_max_messages_below_5(tmp_path):
+    compactor = make_compactor(tmp_path)
+    messages = [user_msg("u1"), text_msg("a1"), user_msg("u2"),
+                text_msg("a2"), user_msg("u3"), text_msg("a3"),
+                user_msg("u4"), text_msg("a4"), user_msg("u5")]
+    with pytest.raises(ValueError):
+        compactor.snip_compact(list(messages), max_messages=4)
+    with pytest.raises(ValueError):
+        compactor.snip_compact(list(messages), max_messages=2)
+
+
+def test_snip_compact_noop_when_head_reaches_tail(tmp_path):
+    compactor = make_compactor(tmp_path)
+    # head 扩展到 tail_start:middle 为空,原样返回
+    messages = [
+        {"role": "system", "content": "sys"},
+        user_msg("u1"),
+        assistant_tool_calls("p1", "p2"),
+        tool_result("p1", "ok"),
+        tool_result("p2", "ok"),
+        text_msg("a1"),
+        user_msg("u2"),
+    ]
+    compacted = compactor.snip_compact(list(messages), max_messages=6)
+    assert compacted == messages

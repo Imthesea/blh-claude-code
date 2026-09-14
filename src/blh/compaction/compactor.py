@@ -143,7 +143,14 @@ class ContextCompactor:
 
     def snip_compact(self, messages: list[dict],
                      max_messages: int = 50) -> list[dict]:
-        """消息数超限时归档中段,留头 max 3 条 + 尾部;保护 tool 配对边界。"""
+        """消息数超限时归档中段,留头 max 3 条 + 尾部;保护 tool 配对边界。
+
+        为保护 tool 配对边界,head/tail 可向外扩展,输出可能略超
+        max_messages,由后续管线兜底。
+        """
+        if max_messages < 5:
+            raise ValueError(
+                "max_messages must be >= 5 (3 head + 1 marker + at least 1 tail)")
         if len(messages) <= max_messages:
             return messages
         head_end = 3
