@@ -32,12 +32,14 @@ def text_msg(text):
     return {"role": "assistant", "content": text, "tool_calls": None}
 
 
-def make_harness(scripted, tools=None, hooks=None, compactor=None):
+def make_harness(scripted, tools=None, hooks=None, compactor=None,
+                 todo_manager=None):
     cfg = Config(api_key="k", base_url=None, model="m", workdir=".")
     reg = ToolRegistry()
     for t in (tools or []):
         reg.register(t)
-    return Harness(cfg, MockProvider(scripted), reg, hooks or HookBus(), compactor)
+    return Harness(cfg, MockProvider(scripted), reg, hooks or HookBus(),
+                   compactor, todo_manager)
 
 
 def test_loop_stops_on_plain_text():
@@ -215,3 +217,42 @@ def test_agent_loop_compact_tool_compacts_after_batch(tmp_path):
 def test_system_prompt_guards_compacted_messages():
     h = make_harness([])
     assert "Conversation summary" in h.system_prompt()
+
+
+def test_loop_injects_todo_reminder_after_three_non_todo_rounds():
+    from blh.planning.todo import TodoManager
+    tool = Tool("echo", "", {"type": "object",
+                             "properties": {"text": {"type": "string"}}},
+                handler=lambda text: text)
+    scripted = []
+    for _ in range(3):
+        scripted.append(tool_call_msg("c", "echo", {"text": "x"}))
+        scripted.append(text_msg("done"))
+    h = make_harness(scripted, tools=[tool], todo_manager=TodoManager())
+    messages = h.new_session()
+    for _ in range(3):
+        h.run_turn(messages, "go")
+    tool_results = [m for m in messages if m["role"] == "tool"]
+    assert any("<reminder>Update your todos.</reminder>" in m["content"]
+               for m in tool_results)
+
+
+def test_loop_does_not_remind_when_todo_used():
+    from blh.planning.todo import TodoManager
+    tm = TodoManager()
+    tool = Tool("todo_write", "", {"type": "object",
+                                   "properties": {"todos": {"type": "array"}},
+                                   "required": ["todos"]},
+                handler=lambda todos: tm.update(todos))
+    scripted = []
+    for _ in range(2):
+        scripted.append(tool_call_msg(
+            "c", "todo_write",
+            {"todos": [{"content": "x", "status": "pending"}]}))
+        scripted.append(text_msg("done"))
+    h = make_harness(scripted, tools=[tool], todo_manager=tm)
+    messages = h.new_session()
+    for _ in range(2):
+        h.run_turn(messages, "go")
+    tool_results = [m for m in messages if m["role"] == "tool"]
+    assert not any("<reminder>" in m["content"] for m in tool_results)

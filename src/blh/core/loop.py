@@ -36,6 +36,7 @@ def agent_loop(harness, messages: list[dict], active_request: str = "") -> None:
             return
 
         compact_requested = False
+        used_todo = False
         for call in tool_calls:
             name = call["function"]["name"]
             arguments = call["function"].get("arguments") or "{}"
@@ -53,10 +54,18 @@ def agent_loop(harness, messages: list[dict], active_request: str = "") -> None:
                 else:
                     result = harness.tools.dispatch(name, arguments)
                     harness.hooks.trigger(POST_TOOL_USE, event, result)
+                if name == "todo_write":
+                    used_todo = True
 
             messages.append({"role": "tool",
                              "tool_call_id": call_id,
                              "content": result})
+
+        todo_manager = harness.todo_manager
+        if todo_manager is not None:
+            reminder = todo_manager.note_round(used_todo)
+            if reminder and messages and messages[-1]["role"] == "tool":
+                messages[-1]["content"] += reminder
 
         if compact_requested:
             messages[:] = compactor.compact_history(messages, active_request)
