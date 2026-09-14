@@ -1,3 +1,4 @@
+from ..goals.controller import CLEAR_ALIASES
 from .config import Config
 from .hooks import STOP, USER_PROMPT_SUBMIT, HookBus
 from .loop import agent_loop
@@ -6,7 +7,7 @@ from .loop import agent_loop
 class Harness:
     def __init__(self, config: Config, provider, tools, hooks: HookBus,
                  compactor=None, todo_manager=None, memory=None, jobs=None,
-                 agents=None, extensions=None):
+                 agents=None, extensions=None, goal=None, workflow=None):
         self.config = config
         self.provider = provider
         self.tools = tools
@@ -17,6 +18,8 @@ class Harness:
         self.jobs = jobs
         self.agents = agents
         self.extensions = extensions
+        self.goal = goal
+        self.workflow = workflow
 
     def system_prompt(self) -> str:
         base = (
@@ -47,6 +50,18 @@ class Harness:
 
     def new_session(self) -> list[dict]:
         return [{"role": "system", "content": self.system_prompt()}]
+
+    def goal_command(self, text: str):
+        """解析 /goal 前缀命令,返回 "status"/"clear"/"set"/None。"""
+        stripped = text.strip()
+        if stripped == "/goal":
+            return "status"
+        if stripped.startswith("/goal "):
+            argument = stripped[6:].strip()
+            if argument.lower() in CLEAR_ALIASES:
+                return "clear"
+            return "set"
+        return None
 
     def run_turn(self, messages: list[dict], user_text: str) -> None:
         self.hooks.trigger(USER_PROMPT_SUBMIT, user_text)

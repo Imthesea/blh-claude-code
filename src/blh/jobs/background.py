@@ -63,6 +63,10 @@ class BackgroundManager:
             self.results[task_id] = output
             self._ready.append(task_id)
 
+    def has_running(self) -> bool:
+        with self._lock:
+            return any(t.get("status") == "running" for t in self.tasks.values())
+
     def collect(self) -> list[str]:
         with self._lock:
             ready = []

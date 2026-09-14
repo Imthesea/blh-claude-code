@@ -75,3 +75,13 @@ def test_build_harness_wires_extensions(tmp_path, monkeypatch):
     names = [s["function"]["name"] for s in harness.tools.schemas()]
     assert "load_skill" in names
     assert "connect_mcp" in names
+
+
+def test_build_harness_wires_workflow_and_goal(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("OPENAI_API_KEY", "k")
+    harness = build_harness(workdir=str(tmp_path))
+    assert harness.goal is not None
+    assert harness.workflow is not None
+    names = [s["function"]["name"] for s in harness.tools.schemas()]
+    assert "run_workflow" in names

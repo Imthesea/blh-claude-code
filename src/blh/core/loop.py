@@ -35,6 +35,11 @@ def agent_loop(harness, messages: list[dict], active_request: str = "") -> None:
 
         tool_calls = assistant.get("tool_calls") or []
         if not tool_calls:
+            decision = _evaluate_goal_stop(harness, messages)
+            if decision is not None and decision.action == "block":
+                messages.append({"role": "user",
+                                 "content": _goal_reminder(harness.goal, decision)})
+                continue
             return
 
         compact_requested = False
@@ -84,6 +89,22 @@ def agent_loop(harness, messages: list[dict], active_request: str = "") -> None:
         if compact_requested:
             messages[:] = compactor.compact_history(messages, active_request)
             _restore_system(messages, system_message)
+
+
+def _evaluate_goal_stop(harness, messages):
+    goal = getattr(harness, "goal", None)
+    if goal is None:
+        return None
+    background_running = bool(harness.jobs
+                              and harness.jobs.background.has_running())
+    return goal.evaluate_after_turn(messages, background_running=background_running)
+
+
+def _goal_reminder(goal, decision):
+    condition = goal.active.condition if goal.active else ""
+    return (f"[Goal still active]\nCondition: {condition}\n"
+            f"Evaluator: {decision.reason}\n"
+            "Continue working and surface the missing evidence.")
 
 
 def _restore_system(messages: list[dict], system_message: dict) -> None:

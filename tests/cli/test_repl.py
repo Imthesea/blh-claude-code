@@ -16,9 +16,9 @@ class MockProvider:
                 "tool_calls": None}
 
 
-def make_harness():
+def make_harness(goal=None):
     cfg = Config(api_key="k", base_url=None, model="m", workdir=".")
-    return Harness(cfg, MockProvider(), ToolRegistry(), HookBus())
+    return Harness(cfg, MockProvider(), ToolRegistry(), HookBus(), goal=goal)
 
 
 def test_repl_runs_turns_until_exit(monkeypatch, capsys):
@@ -82,3 +82,52 @@ def test_repl_starts_and_stops_team_runtime(tmp_path, monkeypatch, capsys):
     repl(harness)
     assert not harness.agents._started
     assert not harness.jobs._started
+
+
+class _FakeGoal:
+    def __init__(self):
+        self.condition = None
+        self.active = None
+
+    def status(self, tokens=0):
+        return "STATUS-OUT"
+
+    def clear(self):
+        return "CLEARED-OUT"
+
+    def set_goal(self, condition):
+        self.condition = condition
+        self.active = type("GoalState", (), {"condition": condition})()
+
+    def evaluate_after_turn(self, messages, background_running=False):
+        from blh.goals.types import StopDecision
+        return StopDecision("achieved", "done")
+
+
+def test_repl_goal_status_does_not_run_turn(monkeypatch, capsys):
+    inputs = iter(["/goal", "exit"])
+    monkeypatch.setattr("builtins.input", lambda prompt="": next(inputs))
+    harness = make_harness(goal=_FakeGoal())
+    repl(harness)
+    out = capsys.readouterr().out
+    assert "STATUS-OUT" in out
+    assert harness.provider.calls == 0
+
+
+def test_repl_goal_clear_does_not_run_turn(monkeypatch, capsys):
+    inputs = iter(["/goal clear", "exit"])
+    monkeypatch.setattr("builtins.input", lambda prompt="": next(inputs))
+    harness = make_harness(goal=_FakeGoal())
+    repl(harness)
+    out = capsys.readouterr().out
+    assert "CLEARED-OUT" in out
+    assert harness.provider.calls == 0
+
+
+def test_repl_goal_set_runs_turn_with_condition(monkeypatch, capsys):
+    inputs = iter(["/goal finish it", "exit"])
+    monkeypatch.setattr("builtins.input", lambda prompt="": next(inputs))
+    harness = make_harness(goal=_FakeGoal())
+    repl(harness)
+    assert harness.goal.condition == "finish it"
+    assert harness.provider.calls == 1

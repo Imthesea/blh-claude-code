@@ -36,13 +36,14 @@ def text_msg(text):
 
 def make_harness(scripted, tools=None, hooks=None, compactor=None,
                  todo_manager=None, memory=None, jobs=None, agents=None,
-                 extensions=None):
+                 extensions=None, goal=None):
     cfg = Config(api_key="k", base_url=None, model="m", workdir=".")
     reg = ToolRegistry()
     for t in (tools or []):
         reg.register(t)
     return Harness(cfg, MockProvider(scripted), reg, hooks or HookBus(),
-                   compactor, todo_manager, memory, jobs, agents, extensions)
+                   compactor, todo_manager, memory, jobs, agents, extensions,
+                   goal)
 
 
 def test_loop_stops_on_plain_text():
@@ -415,3 +416,33 @@ def test_harness_system_prompt_includes_skill_catalog(tmp_path):
     harness = make_harness([], extensions=ext)
     assert "Skills available" in harness.system_prompt()
     assert "a: 第一个" in harness.system_prompt()
+
+
+class _FakeGoal:
+    def __init__(self, decisions):
+        self._decisions = list(decisions)
+        self.active = type("GoalState", (), {"condition": "finish it"})()
+
+    def evaluate_after_turn(self, messages, background_running=False):
+        return self._decisions.pop(0)
+
+
+def test_goal_block_continues_then_achieved_returns():
+    from blh.goals.types import StopDecision
+    goal = _FakeGoal([StopDecision("block", "still missing"),
+                      StopDecision("achieved", "done")])
+    h = make_harness([text_msg("not yet"), text_msg("finished")], goal=goal)
+    messages = h.new_session()
+    h.run_turn(messages, "go")
+    user_messages = [m for m in messages if m["role"] == "user"]
+    assert any("[Goal still active]" in m["content"] for m in user_messages)
+    assert last_assistant_text(messages) == "finished"
+    assert h.provider.calls == 2
+
+
+def test_no_goal_returns_immediately():
+    h = make_harness([text_msg("done")], goal=None)
+    messages = h.new_session()
+    h.run_turn(messages, "go")
+    assert last_assistant_text(messages) == "done"
+    assert h.provider.calls == 1

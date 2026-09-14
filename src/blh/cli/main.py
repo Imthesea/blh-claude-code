@@ -15,6 +15,8 @@ from ..extensions import Extensions
 from ..extensions.mcp import MCPRegistry
 from ..extensions.skills import SkillLoader
 from ..extensions.tools import register_extension_tools
+from ..goals.controller import GoalController
+from ..goals.evaluator import PromptGoalEvaluator
 from ..jobs.background import BackgroundManager
 from ..jobs.cron import CronScheduler
 from ..jobs.runtime import JobsRuntime
@@ -29,6 +31,9 @@ from ..security.approval import make_permission_hook
 from ..security.rules import DEFAULT_RULES
 from ..tools import register_builtin_tools
 from ..tools.registry import ToolRegistry
+from ..workflow.registry import WORKFLOWS
+from ..workflow.runtime import OpenAIWorkflowRunner
+from ..workflow.tools import register_workflow_tools
 from .repl import repl
 
 
@@ -75,8 +80,14 @@ def build_harness(workdir: str | None = None) -> Harness:
     mcp = MCPRegistry(tools, config.workdir)
     register_extension_tools(tools, skills, mcp)
     extensions = Extensions(skills, mcp)
+    workflow_store = wd / ".workflow_runtime"
+    register_workflow_tools(
+        tools, store=workflow_store,
+        runner_factory=lambda: OpenAIWorkflowRunner(provider),
+        workflows=WORKFLOWS)
+    goal = GoalController(PromptGoalEvaluator(provider))
     return Harness(config, provider, tools, hooks, compactor, todo_manager,
-                   memory, jobs, agents, extensions)
+                   memory, jobs, agents, extensions, goal, workflow_store)
 
 
 def main() -> None:

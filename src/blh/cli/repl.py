@@ -24,6 +24,17 @@ def repl(harness: Harness) -> None:
                 continue
             if text in ("exit", "quit"):
                 break
+            if harness.goal is not None:
+                cmd = harness.goal_command(text)
+                if cmd == "status":
+                    print(harness.goal.status(0))
+                    continue
+                if cmd == "clear":
+                    print(harness.goal.clear())
+                    continue
+                if cmd == "set":
+                    harness.goal.set_goal(text[6:].strip())
+                    text = text[6:].strip()
             if jobs is not None:
                 with jobs.agent_lock:
                     harness.run_turn(messages, text)
