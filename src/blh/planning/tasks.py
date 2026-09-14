@@ -1,5 +1,7 @@
 """持久化任务图:Task 数据类 + TaskStore(CRUD、依赖、状态机)。"""
 
+from __future__ import annotations
+
 import json
 import re
 import secrets
@@ -75,3 +77,61 @@ class TaskStore:
             return []
         return [self.load(p.stem)
                 for p in sorted(self.directory.glob("task_*.json"))]
+
+    def _depends_on(self, task_id: str, target_id: str) -> bool:
+        current = self.load(task_id)
+        if target_id in current.blocked_by:
+            return True
+        return any(self._depends_on(dep, target_id)
+                   for dep in current.blocked_by)
+
+    def update_dependencies(self, task_id: str, add_blocked_by: list) -> Task:
+        if not isinstance(add_blocked_by, list):
+            raise ValueError("add_blocked_by must be a list of task IDs")
+        task = self.load(task_id)
+        for dep in add_blocked_by:
+            if not self.exists(dep):
+                raise ValueError(f"dependency does not exist: {dep}")
+            if dep == task_id:
+                raise ValueError("task cannot depend on itself")
+            if self._depends_on(dep, task_id):
+                raise ValueError(f"circular dependency: {task_id} <-> {dep}")
+            if dep not in task.blocked_by:
+                task.blocked_by.append(dep)
+        self.save(task)
+        return task
+
+    def incomplete_dependencies(self, task: Task) -> list[str]:
+        return [dep for dep in task.blocked_by
+                if self.load(dep).status != "completed"]
+
+    def can_start(self, task_id: str) -> bool:
+        task = self.load(task_id)
+        return task.status == "pending" and not self.incomplete_dependencies(task)
+
+    def claim(self, task_id: str, owner: str = "agent") -> str:
+        task = self.load(task_id)
+        if task.status == "completed":
+            return f"Task {task.id} is already completed."
+        if task.status == "in_progress":
+            return (f"Task {task.id} is already in progress"
+                    + (f" by {task.owner}." if task.owner else "."))
+        blocked = self.incomplete_dependencies(task)
+        if blocked:
+            return (f"Task {task.id} is blocked by: " + ", ".join(blocked))
+        task.status = "in_progress"
+        task.owner = owner
+        self.save(task)
+        return f"Claimed {task.id}."
+
+    def complete(self, task_id: str, owner: str = "agent") -> str:
+        task = self.load(task_id)
+        if task.status == "completed":
+            return f"Task {task.id} is already completed."
+        if task.status != "in_progress":
+            return f"Cannot complete pending task {task.id}; claim it first."
+        if task.owner and task.owner != owner:
+            return f"Task {task.id} is owned by {task.owner}, not {owner}."
+        task.status = "completed"
+        self.save(task)
+        return f"Completed {task.id}."
