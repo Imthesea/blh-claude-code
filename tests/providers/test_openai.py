@@ -93,3 +93,19 @@ def test_is_prompt_too_long_matches_400_with_keywords():
     assert is_prompt_too_long(FakeBadRequest("too many tokens in prompt"))
     assert not is_prompt_too_long(FakeBadRequest("invalid api key"))
     assert not is_prompt_too_long(ValueError("prompt_too_long"))  # 无 400
+
+
+def test_chat_passes_max_tokens_when_provided():
+    payload = {"role": "assistant", "content": "hi", "tool_calls": None}
+    client = FakeClient(payload)
+    provider = OpenAIProvider(make_config(), client=client)
+    provider.chat([{"role": "user", "content": "hi"}], [], max_tokens=200)
+    assert client.chat.completions.received["max_tokens"] == 200
+
+
+def test_chat_omits_max_tokens_when_none():
+    payload = {"role": "assistant", "content": "hi", "tool_calls": None}
+    client = FakeClient(payload)
+    provider = OpenAIProvider(make_config(), client=client)
+    provider.chat([{"role": "user", "content": "hi"}], [])
+    assert "max_tokens" not in client.chat.completions.received

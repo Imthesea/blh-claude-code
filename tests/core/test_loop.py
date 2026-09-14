@@ -7,6 +7,8 @@ from blh.core.config import Config
 from blh.core.harness import Harness
 from blh.core.hooks import HookBus
 from blh.core.loop import last_assistant_text
+from blh.memory.store import MemoryStore
+from blh.memory.system import Memory
 from blh.tools.registry import Tool, ToolRegistry
 
 
@@ -15,7 +17,7 @@ class MockProvider:
         self.scripted = list(scripted)
         self.calls = 0
 
-    def chat(self, messages, tools):
+    def chat(self, messages, tools, max_tokens=None):
         self.calls += 1
         if not self.scripted:
             raise AssertionError("MockProvider exhausted")
@@ -33,13 +35,13 @@ def text_msg(text):
 
 
 def make_harness(scripted, tools=None, hooks=None, compactor=None,
-                 todo_manager=None):
+                 todo_manager=None, memory=None):
     cfg = Config(api_key="k", base_url=None, model="m", workdir=".")
     reg = ToolRegistry()
     for t in (tools or []):
         reg.register(t)
     return Harness(cfg, MockProvider(scripted), reg, hooks or HookBus(),
-                   compactor, todo_manager)
+                   compactor, todo_manager, memory)
 
 
 def test_loop_stops_on_plain_text():
@@ -256,3 +258,62 @@ def test_loop_does_not_remind_when_todo_used():
         h.run_turn(messages, "go")
     tool_results = [m for m in messages if m["role"] == "tool"]
     assert not any("<reminder>" in m["content"] for m in tool_results)
+
+
+def test_run_turn_injects_memory_system_section(tmp_path):
+    store = MemoryStore(tmp_path / ".memory")
+    store.write_memory_file("Indent", "user", "Use tabs", "Tabs not spaces.")
+    provider = MockProvider([
+        {"role": "assistant", "content": "[0]", "tool_calls": None},  # recall
+        text_msg("done"),                                            # 主循环
+        {"role": "assistant", "content": "[]", "tool_calls": None},   # extract
+    ])
+    memory = Memory(store, provider)
+    h = make_harness([], memory=memory)
+    h.provider = provider
+    messages = h.new_session()
+    h.run_turn(messages, "what indent style do I prefer")
+    assert "Relevant memory records:" in messages[0]["content"]
+    assert "Tabs not spaces." in messages[0]["content"]
+    assert last_assistant_text(messages) == "done"
+
+
+def test_run_turn_extracts_memories(tmp_path):
+    store = MemoryStore(tmp_path / ".memory")
+    provider = MockProvider([
+        text_msg("done"),                                            # 主循环
+        {"role": "assistant", "content": json.dumps([
+            {"name": "Pref", "type": "user", "scope": "persistent",
+             "description": "Likes tabs", "body": "Use tabs."},
+        ]), "tool_calls": None},                                     # extract
+    ])
+    memory = Memory(store, provider)
+    h = make_harness([], memory=memory)
+    h.provider = provider
+    messages = h.new_session()
+    h.run_turn(messages, "I prefer tabs")
+    assert store.read_memory_file("pref.md") is not None
+
+
+def test_run_turn_consolidates_after_extract():
+    class FakeMemory:
+        def __init__(self):
+            self.extracted = None
+            self.consolidated = False
+
+        def system_section(self, messages):
+            return ""
+
+        def extract(self, messages):
+            self.extracted = messages
+            return 1
+
+        def consolidate(self):
+            self.consolidated = True
+            return 1
+
+    memory = FakeMemory()
+    h = make_harness([text_msg("done")], memory=memory)
+    h.run_turn(h.new_session(), "hi")
+    assert memory.extracted is not None
+    assert memory.consolidated

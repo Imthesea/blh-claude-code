@@ -9,13 +9,14 @@ class OpenAIProvider:
         self.config = config
         self.client = client or OpenAI(api_key=config.api_key, base_url=config.base_url)
 
-    def chat(self, messages: list[dict], tools: list[dict]) -> dict:
+    def chat(self, messages: list[dict], tools: list[dict],
+             max_tokens: int | None = None) -> dict:
         def call():
-            return self.client.chat.completions.create(
-                model=self.config.model,
-                messages=messages,
-                tools=tools or None,
-            )
+            kwargs = {"model": self.config.model, "messages": messages,
+                      "tools": tools or None}
+            if max_tokens is not None:
+                kwargs["max_tokens"] = max_tokens
+            return self.client.chat.completions.create(**kwargs)
 
         response = with_retry(call, RetryState(), is_retryable)
         return response.choices[0].message.model_dump()
