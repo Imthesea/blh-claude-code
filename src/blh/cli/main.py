@@ -36,6 +36,7 @@ def build_harness(workdir: str | None = None) -> Harness:
     register_planning_tools(tools, todo_manager, task_store)
     memory = Memory(MemoryStore(wd / ".memory"), provider)
     cron = CronScheduler(wd / ".scheduled_tasks.json")
+    cron.load()
     register_jobs_tools(tools, cron)
     jobs = JobsRuntime(
         BackgroundManager(config.workdir, config.bash_timeout,

@@ -43,7 +43,6 @@ class JobsRuntime:
         with self._lock:
             if self._started:
                 return
-            self.cron.load()
             self._stop.clear()
             self._threads = [
                 threading.Thread(target=self._scheduler_loop,

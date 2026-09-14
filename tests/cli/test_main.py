@@ -1,3 +1,5 @@
+import json
+
 from blh.cli.main import build_harness
 
 
@@ -40,3 +42,14 @@ def test_build_harness_wires_jobs(tmp_path, monkeypatch):
     names = [s["function"]["name"] for s in harness.tools.schemas()]
     for name in ("schedule_cron", "list_crons", "cancel_cron"):
         assert name in names
+
+
+def test_build_harness_loads_persisted_cron(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("OPENAI_API_KEY", "k")
+    (tmp_path / ".scheduled_tasks.json").write_text(
+        json.dumps([{"id": "cron_abc12345", "cron": "0 9 * * *",
+                     "prompt": "run tests", "recurring": True, "durable": True,
+                     "pending_delivery": False, "last_fired": None}]))
+    harness = build_harness(workdir=str(tmp_path))
+    assert [j.id for j in harness.jobs.cron.list_jobs()] == ["cron_abc12345"]
