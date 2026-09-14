@@ -47,3 +47,17 @@ def test_ask_fn_eof_denies():
 
     hook = make_permission_hook([PermissionRule("bash", "*", "ask")], "/wd", ask_fn=ask_fn)
     assert hook({"name": "bash", "input": {"command": "make"}}) == "denied by user"
+
+
+def test_ask_denies_on_non_main_thread():
+    import threading
+    hook = make_permission_hook(
+        [PermissionRule("bash", "*", "ask")], "/wd",
+        ask_fn=lambda p: (_ for _ in ()).throw(AssertionError("input called")))
+    results = []
+    thread = threading.Thread(
+        target=lambda: results.append(
+            hook({"name": "bash", "input": {"command": "rm build.log"}})))
+    thread.start()
+    thread.join(timeout=1)
+    assert results == ["denied: cannot request approval from a scheduled turn"]

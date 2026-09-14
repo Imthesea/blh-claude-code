@@ -1,3 +1,4 @@
+import threading
 from collections.abc import Callable
 
 from .rules import PermissionRule, match_rule
@@ -16,6 +17,8 @@ def make_permission_hook(rules: list[PermissionRule], workdir: str,
             return None
         if action == "deny":
             return f"denied by permission rule ({tool}: {target})"
+        if threading.current_thread() is not threading.main_thread():
+            return "denied: cannot request approval from a scheduled turn"
         try:
             answer = ask_fn(f"allow {tool}({target})? [y/N] ")
         except (EOFError, KeyboardInterrupt):
