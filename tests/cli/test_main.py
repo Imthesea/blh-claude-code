@@ -22,3 +22,11 @@ def test_build_harness_wires_planning(tmp_path, monkeypatch):
     for name in ("todo_write", "create_task", "update_task", "list_tasks",
                  "get_task", "claim_task", "complete_task"):
         assert name in names
+
+
+def test_build_harness_wires_memory(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("OPENAI_API_KEY", "k")
+    harness = build_harness(workdir=str(tmp_path))
+    assert harness.memory is not None
+    assert harness.memory.store.directory == tmp_path / ".memory"

@@ -7,6 +7,8 @@ from ..core.config import load_config
 from ..core.harness import Harness
 from ..core.hooks import PRE_TOOL_USE, HookBus
 from ..core.loop import last_assistant_text
+from ..memory.store import MemoryStore
+from ..memory.system import Memory
 from ..planning.tasks import TaskStore
 from ..planning.todo import TodoManager
 from ..planning.tools import register_planning_tools
@@ -28,6 +30,7 @@ def build_harness(workdir: str | None = None) -> Harness:
     todo_manager = TodoManager()
     task_store = TaskStore(wd / ".tasks")
     register_planning_tools(tools, todo_manager, task_store)
+    memory = Memory(MemoryStore(wd / ".memory"), provider)
     compactor = ContextCompactor(
         provider,
         transcript_dir=wd / ".transcripts",
@@ -36,7 +39,7 @@ def build_harness(workdir: str | None = None) -> Harness:
     hooks = HookBus()
     hooks.register(
         PRE_TOOL_USE, make_permission_hook(DEFAULT_RULES, config.workdir))
-    return Harness(config, provider, tools, hooks, compactor, todo_manager)
+    return Harness(config, provider, tools, hooks, compactor, todo_manager, memory)
 
 
 def main() -> None:
