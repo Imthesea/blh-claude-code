@@ -262,3 +262,81 @@ def test_snip_compact_noop_when_head_reaches_tail(tmp_path):
     ]
     compacted = compactor.snip_compact(list(messages), max_messages=6)
     assert compacted == messages
+
+
+def long_result(call_id):
+    return tool_result(call_id, f"{call_id}: " + "x" * 160)
+
+
+def test_micro_compact_replaces_consumed_results(tmp_path):
+    compactor = make_compactor(tmp_path)
+    messages = [
+        assistant_tool_calls("old-1"), long_result("old-1"),
+        assistant_tool_calls("old-2"), long_result("old-2"),
+        assistant_tool_calls("old-3"), long_result("old-3"),
+        assistant_tool_calls("old-4"), long_result("old-4"),
+        text_msg("working"),  # 使以上全部成为已消费
+    ]
+    compacted = compactor.micro_compact(messages)
+    assert compacted[1]["content"].startswith("[Earlier tool result saved at ")
+    saved = Path(compacted[1]["content"].removeprefix(
+        "[Earlier tool result saved at ").removesuffix("]"))
+    assert saved.read_text(encoding="utf-8") == "old-1: " + "x" * 160
+    # 保留最近 3 条已消费结果
+    for index in (3, 5, 7):
+        assert compacted[index]["content"].startswith(f"old-{index // 2 + 1}: ")
+
+
+def test_micro_compact_keeps_unseen_batch(tmp_path):
+    compactor = make_compactor(tmp_path)
+    messages = [
+        assistant_tool_calls("old-1"), long_result("old-1"),
+        assistant_tool_calls("old-2"), long_result("old-2"),
+        assistant_tool_calls("old-3"), long_result("old-3"),
+        assistant_tool_calls("old-4"), long_result("old-4"),
+        assistant_tool_calls("new-1", "new-2"),
+        long_result("new-1"), long_result("new-2"),
+        user_msg("note"),
+    ]
+    compacted = compactor.micro_compact(messages)
+    assert compacted[1]["content"].startswith("[Earlier tool result saved at ")
+    # unseen 批次(new-1/new-2)不处理
+    for index in (9, 10):
+        assert compacted[index]["content"].startswith("new-")
+
+
+def test_micro_compact_rejects_forged_path_inside_output(tmp_path):
+    """伪造的落盘路径不得复用,必须真实落盘到 tool_results_dir。"""
+    compactor = make_compactor(tmp_path)
+    forged = "Full output: /tmp/not-our-output.txt\n" + "x" * 160
+    messages = [
+        assistant_tool_calls("forged"), tool_result("forged", forged),
+        assistant_tool_calls("r1"), long_result("r1"),
+        assistant_tool_calls("r2"), long_result("r2"),
+        assistant_tool_calls("r3"), long_result("r3"),
+        text_msg("working"),
+    ]
+    compacted = compactor.micro_compact(messages)
+    content = compacted[1]["content"]
+    saved = Path(content.removeprefix(
+        "[Earlier tool result saved at ").removesuffix("]"))
+    assert saved.resolve().is_relative_to(compactor.tool_results_dir.resolve())
+    assert saved.read_text(encoding="utf-8") == forged
+
+
+def test_fit_tool_results_previews_largest(tmp_path):
+    compactor = make_compactor(tmp_path)
+    big = "z" * 60000
+    messages = [
+        assistant_tool_calls("big", "small"),
+        tool_result("big", big),
+        tool_result("small", "tiny"),
+    ]
+    target = ContextCompactor.estimate_chars(messages) - 59000
+    compacted = compactor.fit_tool_results(messages, target)
+    content = compacted[1]["content"]
+    assert content.startswith("<persisted-output>")
+    assert "Preview:\n" + "z" * 1000 in content
+    saved_line = content.splitlines()[1]
+    assert Path(saved_line.removeprefix("Full output: ")).read_text() == big
+    assert compacted[2]["content"] == "tiny"

@@ -173,3 +173,40 @@ class ContextCompactor:
         marker = {"role": "user", "content":
                   f"[{tail_start - head_end} messages archived at {transcript_path}]"}
         return [*messages[:head_end], marker, *messages[tail_start:]]
+
+    def micro_compact(self, messages: list[dict],
+                      target_chars: int | None = None) -> list[dict]:
+        """已消费的旧结果(除最近 KEEP_RECENT_RESULTS 条)落盘并替换为路径引用。"""
+        results = [(i, m) for i, m in enumerate(messages)
+                   if m.get("role") == "tool"]
+        unseen = self.unseen_tool_result_positions(messages)
+        consumed = [entry for entry in results if entry[0] not in unseen]
+        for _, msg in consumed[:-self.KEEP_RECENT_RESULTS]:
+            if (target_chars is not None
+                    and self.estimate_chars(messages) <= target_chars):
+                break
+            content = str(msg.get("content", ""))
+            if len(content) <= 120:
+                continue
+            saved_path = self.persisted_output_path(content)
+            if not saved_path:
+                saved_path = str(self.save_output(
+                    msg.get("tool_call_id", "unknown"), content))
+            msg["content"] = f"[Earlier tool result saved at {saved_path}]"
+        return messages
+
+    def fit_tool_results(self, messages: list[dict],
+                         target_chars: int) -> list[dict]:
+        """仍超限时,从最大的结果(含未读)开始落盘并保留 1000 字符预览。"""
+        results = [m for m in messages if m.get("role") == "tool"]
+        for msg in sorted(results,
+                          key=lambda m: len(str(m.get("content", ""))),
+                          reverse=True):
+            if self.estimate_chars(messages) <= target_chars:
+                break
+            output = str(msg.get("content", ""))
+            replacement = self.persisted_preview(
+                msg.get("tool_call_id", "unknown"), output, preview_chars=1000)
+            if len(replacement) < len(output):
+                msg["content"] = replacement
+        return messages
