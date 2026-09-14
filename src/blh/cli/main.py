@@ -1,5 +1,8 @@
 import argparse
+from pathlib import Path
 
+from ..compaction.compactor import ContextCompactor
+from ..compaction.tools import register_compact_tool
 from ..core.config import load_config
 from ..core.harness import Harness
 from ..core.hooks import PRE_TOOL_USE, HookBus
@@ -14,11 +17,20 @@ from .repl import repl
 
 def build_harness(workdir: str | None = None) -> Harness:
     config = load_config(workdir)
-    harness = Harness(config, OpenAIProvider(config), ToolRegistry(), HookBus())
-    register_builtin_tools(harness.tools, config)
-    harness.hooks.register(
+    provider = OpenAIProvider(config)
+    tools = ToolRegistry()
+    register_builtin_tools(tools, config)
+    register_compact_tool(tools)
+    wd = Path(config.workdir)
+    compactor = ContextCompactor(
+        provider,
+        transcript_dir=wd / ".transcripts",
+        tool_results_dir=wd / ".task_outputs" / "tool-results",
+    )
+    hooks = HookBus()
+    hooks.register(
         PRE_TOOL_USE, make_permission_hook(DEFAULT_RULES, config.workdir))
-    return harness
+    return Harness(config, provider, tools, hooks, compactor)
 
 
 def main() -> None:
