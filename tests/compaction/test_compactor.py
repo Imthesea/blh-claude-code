@@ -469,3 +469,80 @@ def test_reactive_compact_tail_boundary_keeps_tool_pair(tmp_path):
     assert captured["messages"] == messages[:3]
     assert compacted[1:] == messages[3:]
     assert_no_orphan_tool_results(compacted)
+
+
+def test_prepare_preserves_results_below_limit(tmp_path):
+    compactor = make_compactor(tmp_path)
+    messages = []
+    expected = []
+    for index in range(5):
+        result = f"result-{index}:" + "x" * 200
+        expected.append(result)
+        messages.extend([
+            assistant_tool_calls(f"tool-{index}"),
+            tool_result(f"tool-{index}", result),
+        ])
+    messages.append(text_msg("continue"))
+    prepared = compactor.prepare(messages, "inspect the repository")
+    actual = [m["content"] for m in prepared if m.get("role") == "tool"]
+    assert actual == expected
+
+
+def test_prepare_micro_compacts_after_exceeding_limit(tmp_path):
+    compactor = make_compactor(tmp_path)
+    messages = []
+    for index in range(5):
+        messages.extend([
+            assistant_tool_calls(f"tool-{index}"),
+            tool_result(f"tool-{index}", f"result-{index}:" + "x" * 1000),
+        ])
+    messages.append(text_msg("continue"))
+    # 动态阈值:恰好在 micro 替换最旧 2 条后降到阈值内,不触发 fit/compact_history;
+    # 避免硬编码阈值受 OpenAI 包装开销与临时路径长度影响
+    compactor.CONTEXT_CHAR_LIMIT = ContextCompactor.estimate_chars(messages) - 1200
+    prepared = compactor.prepare(messages, "inspect the repository")
+    actual = [m["content"] for m in prepared if m.get("role") == "tool"]
+    assert all(c.startswith("[Earlier tool result saved at ") for c in actual[:2])
+    for index, content in enumerate(actual[:2]):
+        saved = Path(content.removeprefix(
+            "[Earlier tool result saved at ").removesuffix("]"))
+        assert saved.read_text(encoding="utf-8") == f"result-{index}:" + "x" * 1000
+    assert all(c.startswith(f"result-{index}:")
+               for index, c in enumerate(actual[2:], start=2))
+
+
+def test_prepare_persists_oversized_unseen_before_full_compact(tmp_path):
+    compactor = make_compactor(tmp_path)
+
+    def fail_summarize(_messages):
+        raise AssertionError("full compaction should not run")
+
+    compactor.summarize_history = fail_summarize
+    output = "latest-result:" + "x" * 60000
+    messages = [
+        assistant_tool_calls("latest"),
+        tool_result("latest", output),
+    ]
+    prepared = compactor.prepare(messages, "inspect the result")
+    assert len(prepared) == 2
+    content = prepared[1]["content"]
+    assert content.startswith("<persisted-output>")
+    saved_line = next(line for line in content.splitlines()
+                      if line.startswith("Full output: "))
+    assert Path(saved_line.removeprefix("Full output: ")).read_text() == output
+
+
+def test_prepare_auto_compacts_when_still_over_limit(tmp_path):
+    provider = MockProvider([
+        {"role": "assistant", "content": "summary", "tool_calls": None}])
+    compactor = make_compactor(tmp_path, provider)
+    compactor.CONTEXT_CHAR_LIMIT = 2000
+    messages = [
+        {"role": "system", "content": "sys"},
+        user_msg("u" + "x" * 5000),
+        text_msg("a" + "y" * 5000),
+    ]
+    prepared = compactor.prepare(messages, "big task")
+    assert len(prepared) == 1
+    assert prepared[0]["content"].startswith("[Compacted]")
+    assert "Current user request:\nbig task" in prepared[0]["content"]

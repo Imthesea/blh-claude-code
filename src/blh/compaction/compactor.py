@@ -262,3 +262,18 @@ class ContextCompactor:
         message = self.summary_message(
             "Reactive compact", active_request, summary, transcript)
         return [message, *messages[tail_start:]] if tail_start else [message]
+
+    def prepare(self, messages: list[dict],
+                active_request: str) -> list[dict]:
+        """每次模型调用前执行:低成本可恢复操作优先,模型摘要最后。"""
+        messages = self.tool_result_budget(messages)
+        messages = self.snip_compact(messages)
+        if self.estimate_chars(messages) > self.CONTEXT_CHAR_LIMIT:
+            target = int(self.CONTEXT_CHAR_LIMIT * 0.8)
+            messages = self.micro_compact(messages, target)
+            if self.estimate_chars(messages) > self.CONTEXT_CHAR_LIMIT:
+                messages = self.fit_tool_results(messages, target)
+            if self.estimate_chars(messages) > self.CONTEXT_CHAR_LIMIT:
+                print("[auto compact]")
+                messages = self.compact_history(messages, active_request)
+        return messages
