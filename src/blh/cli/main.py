@@ -7,6 +7,10 @@ from ..core.config import load_config
 from ..core.harness import Harness
 from ..core.hooks import PRE_TOOL_USE, HookBus
 from ..core.loop import last_assistant_text
+from ..jobs.background import BackgroundManager
+from ..jobs.cron import CronScheduler
+from ..jobs.runtime import JobsRuntime
+from ..jobs.tools import register_jobs_tools
 from ..memory.store import MemoryStore
 from ..memory.system import Memory
 from ..planning.tasks import TaskStore
@@ -31,6 +35,13 @@ def build_harness(workdir: str | None = None) -> Harness:
     task_store = TaskStore(wd / ".tasks")
     register_planning_tools(tools, todo_manager, task_store)
     memory = Memory(MemoryStore(wd / ".memory"), provider)
+    cron = CronScheduler(wd / ".scheduled_tasks.json")
+    register_jobs_tools(tools, cron)
+    jobs = JobsRuntime(
+        BackgroundManager(config.workdir, config.bash_timeout,
+                          config.max_output_chars),
+        cron,
+    )
     compactor = ContextCompactor(
         provider,
         transcript_dir=wd / ".transcripts",
@@ -39,7 +50,8 @@ def build_harness(workdir: str | None = None) -> Harness:
     hooks = HookBus()
     hooks.register(
         PRE_TOOL_USE, make_permission_hook(DEFAULT_RULES, config.workdir))
-    return Harness(config, provider, tools, hooks, compactor, todo_manager, memory)
+    return Harness(config, provider, tools, hooks, compactor, todo_manager,
+                   memory, jobs)
 
 
 def main() -> None:

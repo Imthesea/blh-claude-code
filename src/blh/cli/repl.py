@@ -4,18 +4,30 @@ from ..core.loop import last_assistant_text
 
 def repl(harness: Harness) -> None:
     messages = harness.new_session()
+    jobs = harness.jobs
+    if jobs is not None:
+        jobs.set_cron_turn(lambda: harness.run_scheduled_turn(messages))
+        jobs.start()
     print("blh — type 'exit' to quit")
-    while True:
-        try:
-            text = input("> ").strip()
-        except (EOFError, KeyboardInterrupt):
-            print()
-            break
-        if not text:
-            continue
-        if text in ("exit", "quit"):
-            break
-        harness.run_turn(messages, text)
-        reply = last_assistant_text(messages)
-        if reply:
-            print(reply)
+    try:
+        while True:
+            try:
+                text = input("> ").strip()
+            except (EOFError, KeyboardInterrupt):
+                print()
+                break
+            if not text:
+                continue
+            if text in ("exit", "quit"):
+                break
+            if jobs is not None:
+                with jobs.agent_lock:
+                    harness.run_turn(messages, text)
+            else:
+                harness.run_turn(messages, text)
+            reply = last_assistant_text(messages)
+            if reply:
+                print(reply)
+    finally:
+        if jobs is not None:
+            jobs.stop()

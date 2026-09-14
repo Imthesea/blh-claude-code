@@ -38,3 +38,18 @@ def test_repl_eof_exits_cleanly(monkeypatch, capsys):
 
     monkeypatch.setattr("builtins.input", raise_eof)
     repl(make_harness())  # 不抛异常即通过
+
+
+def test_repl_starts_and_stops_runtime(tmp_path, monkeypatch, capsys):
+    from blh.jobs.background import BackgroundManager
+    from blh.jobs.cron import CronScheduler
+    from blh.jobs.runtime import JobsRuntime
+    cfg = Config(api_key="k", base_url=None, model="m", workdir=".")
+    harness = Harness(
+        cfg, MockProvider(), ToolRegistry(), HookBus(),
+        jobs=JobsRuntime(BackgroundManager(str(tmp_path)),
+                         CronScheduler(tmp_path / ".scheduled_tasks.json")))
+    inputs = iter(["hello", "exit"])
+    monkeypatch.setattr("builtins.input", lambda prompt="": next(inputs))
+    repl(harness)
+    assert not harness.jobs._started

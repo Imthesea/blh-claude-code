@@ -30,3 +30,13 @@ def test_build_harness_wires_memory(tmp_path, monkeypatch):
     harness = build_harness(workdir=str(tmp_path))
     assert harness.memory is not None
     assert harness.memory.store.directory == tmp_path / ".memory"
+
+
+def test_build_harness_wires_jobs(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("OPENAI_API_KEY", "k")
+    harness = build_harness(workdir=str(tmp_path))
+    assert harness.jobs is not None
+    names = [s["function"]["name"] for s in harness.tools.schemas()]
+    for name in ("schedule_cron", "list_crons", "cancel_cron"):
+        assert name in names
