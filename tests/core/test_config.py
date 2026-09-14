@@ -16,13 +16,15 @@ def test_load_config_from_env(monkeypatch, tmp_path):
     assert cfg.max_output_chars == 30000
 
 
-def test_load_config_requires_api_key(monkeypatch):
+def test_load_config_requires_api_key(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     with pytest.raises(SystemExit):
         load_config()
 
 
-def test_base_url_defaults_to_none(monkeypatch):
+def test_base_url_defaults_to_none(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
     monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
     assert load_config().base_url is None

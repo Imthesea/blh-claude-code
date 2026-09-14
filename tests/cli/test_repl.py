@@ -53,3 +53,32 @@ def test_repl_starts_and_stops_runtime(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr("builtins.input", lambda prompt="": next(inputs))
     repl(harness)
     assert not harness.jobs._started
+
+
+def test_repl_starts_and_stops_team_runtime(tmp_path, monkeypatch, capsys):
+    from blh.agents.bus import MessageBus
+    from blh.agents.team import TeamRuntime
+    from blh.jobs.background import BackgroundManager
+    from blh.jobs.cron import CronScheduler
+    from blh.jobs.runtime import JobsRuntime
+    from blh.planning.tasks import TaskStore
+    cfg = Config(api_key="k", base_url=None, model="m", workdir=".")
+    jobs = JobsRuntime(BackgroundManager(str(tmp_path)),
+                       CronScheduler(tmp_path / ".scheduled_tasks.json"))
+    agents = TeamRuntime(
+        store=TaskStore(tmp_path / ".tasks"),
+        bus=MessageBus(tmp_path / ".mailboxes"),
+        agent_lock=jobs.agent_lock,
+        workdir=".",
+        worktrees_dir=tmp_path / ".worktrees",
+        provider=MockProvider(),
+        config=cfg,
+        hooks=HookBus(),
+    )
+    harness = Harness(cfg, MockProvider(), ToolRegistry(), HookBus(),
+                      jobs=jobs, agents=agents)
+    inputs = iter(["hello", "exit"])
+    monkeypatch.setattr("builtins.input", lambda prompt="": next(inputs))
+    repl(harness)
+    assert not harness.agents._started
+    assert not harness.jobs._started

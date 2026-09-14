@@ -10,3 +10,5 @@ dist/
 .tasks/
 .memory/
 .scheduled_tasks.json
+.mailboxes/
+.worktrees/

@@ -35,13 +35,13 @@ def text_msg(text):
 
 
 def make_harness(scripted, tools=None, hooks=None, compactor=None,
-                 todo_manager=None, memory=None, jobs=None):
+                 todo_manager=None, memory=None, jobs=None, agents=None):
     cfg = Config(api_key="k", base_url=None, model="m", workdir=".")
     reg = ToolRegistry()
     for t in (tools or []):
         reg.register(t)
     return Harness(cfg, MockProvider(scripted), reg, hooks or HookBus(),
-                   compactor, todo_manager, memory, jobs)
+                   compactor, todo_manager, memory, jobs, agents)
 
 
 def test_loop_stops_on_plain_text():
@@ -360,3 +360,43 @@ def test_loop_injects_background_results(tmp_path):
     h.run_turn(messages, "continue")
     user_messages = [m for m in messages if m["role"] == "user"]
     assert any("<task_notification>" in m["content"] for m in user_messages)
+
+
+def test_run_team_turn_injects_and_loops():
+    class FakeAgents:
+        def __init__(self):
+            self.consumed = 0
+
+        def consume_and_inject_team(self, messages):
+            self.consumed += 1
+            if self.consumed == 1:
+                messages.append({"role": "user", "content": "[Team events]\nbob: done"})
+                return 1
+            return 0
+
+    agents = FakeAgents()
+    h = make_harness([text_msg("acknowledged")], agents=agents)
+    messages = h.new_session()
+    h.run_team_turn(messages)
+    assert agents.consumed == 1
+    assert last_assistant_text(messages) == "acknowledged"
+
+
+def test_loop_dispatches_task_tool():
+    seen = []
+
+    def handler(prompt):
+        seen.append(prompt)
+        return "sub-result"
+
+    h = make_harness(
+        [tool_call_msg("c1", "task", {"prompt": "explore"}), text_msg("done")],
+        tools=[Tool("task", "", {"type": "object",
+                                 "properties": {"prompt": {"type": "string"}},
+                                 "required": ["prompt"]}, handler=handler)],
+    )
+    messages = h.new_session()
+    h.run_turn(messages, "go")
+    tool_results = [m for m in messages if m["role"] == "tool"]
+    assert tool_results[0]["content"] == "sub-result"
+    assert seen == ["explore"]

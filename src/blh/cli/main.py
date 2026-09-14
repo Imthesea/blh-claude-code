@@ -1,6 +1,10 @@
 import argparse
 from pathlib import Path
 
+from ..agents.bus import MessageBus
+from ..agents.subagent import SubagentRunner
+from ..agents.team import TeamRuntime
+from ..agents.tools import register_agent_tools
 from ..compaction.compactor import ContextCompactor
 from ..compaction.tools import register_compact_tool
 from ..core.config import load_config
@@ -51,8 +55,20 @@ def build_harness(workdir: str | None = None) -> Harness:
     hooks = HookBus()
     hooks.register(
         PRE_TOOL_USE, make_permission_hook(DEFAULT_RULES, config.workdir))
+    agents = TeamRuntime(
+        store=task_store,
+        bus=MessageBus(wd / ".mailboxes"),
+        agent_lock=jobs.agent_lock,
+        workdir=config.workdir,
+        worktrees_dir=wd / ".worktrees",
+        provider=provider,
+        config=config,
+        hooks=hooks,
+    )
+    subagent = SubagentRunner(provider, config, hooks)
+    register_agent_tools(tools, subagent, agents)
     return Harness(config, provider, tools, hooks, compactor, todo_manager,
-                   memory, jobs)
+                   memory, jobs, agents)
 
 
 def main() -> None:

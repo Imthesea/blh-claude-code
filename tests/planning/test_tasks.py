@@ -134,3 +134,18 @@ def test_complete_owner_mismatch(tmp_path):
     store.claim(a.id, owner="alice")
     assert "owned by alice" in store.complete(a.id, owner="bob")
     assert store.complete(a.id, owner="alice") == f"Completed {a.id}."
+
+
+def test_task_has_worktree_field():
+    from blh.planning.tasks import Task
+    task = Task(id="task_00000000", subject="s", description="",
+                status="pending", owner=None, blocked_by=[])
+    assert task.worktree is None
+
+
+def test_task_worktree_roundtrips(tmp_path):
+    store = make_store(tmp_path)
+    task = store.create("s")
+    task.worktree = "wt-1"
+    store.save(task)
+    assert store.load(task.id).worktree == "wt-1"

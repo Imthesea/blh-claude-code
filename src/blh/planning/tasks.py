@@ -17,6 +17,7 @@ class Task:
     status: str
     owner: str | None
     blocked_by: list[str]
+    worktree: str | None = None
 
 
 VALID_STATUSES = ("pending", "in_progress", "completed")
