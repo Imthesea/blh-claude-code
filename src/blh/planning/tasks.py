@@ -87,7 +87,7 @@ class TaskStore:
 
     def update_dependencies(self, task_id: str, add_blocked_by: list) -> Task:
         if not isinstance(add_blocked_by, list):
-            raise ValueError("add_blocked_by must be a list of task IDs")
+            raise TypeError("add_blocked_by must be a list of task IDs")
         task = self.load(task_id)
         for dep in add_blocked_by:
             if not self.exists(dep):

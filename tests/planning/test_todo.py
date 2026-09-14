@@ -25,7 +25,7 @@ def test_render_marks_by_status():
 
 
 def test_update_rejects_non_list():
-    with pytest.raises(ValueError):
+    with pytest.raises(TypeError):
         TodoManager().update({"content": "a"})
 
 

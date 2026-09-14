@@ -11,11 +11,11 @@ class TodoManager:
 
     def update(self, todos: list) -> str:
         if not isinstance(todos, list):
-            raise ValueError("todos must be a list")
+            raise TypeError("todos must be a list")
         items = []
         for todo in todos:
             if not isinstance(todo, dict):
-                raise ValueError("each todo must be an object")
+                raise TypeError("each todo must be an object")
             content = str(todo.get("content", "")).strip()
             if not content:
                 raise ValueError("todo content cannot be empty")
