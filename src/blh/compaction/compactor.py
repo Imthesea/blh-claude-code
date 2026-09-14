@@ -1,5 +1,6 @@
-# src/blh/compaction/compactor.py
 import json
+import re
+import uuid
 from pathlib import Path
 
 SUMMARY_SYSTEM = (
@@ -45,3 +46,62 @@ class ContextCompactor:
         )
         return {i for i in range(last_assistant + 1, len(messages))
                 if messages[i].get("role") == "tool"}
+
+    def write_transcript(self, messages: list[dict]) -> Path:
+        self.transcript_dir.mkdir(parents=True, exist_ok=True)
+        path = self.transcript_dir / f"transcript_{uuid.uuid4().hex}.jsonl"
+        with path.open("x", encoding="utf-8") as transcript:
+            for message in messages:
+                transcript.write(
+                    json.dumps(message, default=str, ensure_ascii=False) + "\n")
+        return path
+
+    def save_output(self, tool_call_id: str, output: str) -> Path:
+        self.tool_results_dir.mkdir(parents=True, exist_ok=True)
+        safe_id = (re.sub(r"[^A-Za-z0-9_-]", "_", str(tool_call_id))[:120]
+                   or "unknown")
+        path = self.tool_results_dir / f"{safe_id}.txt"
+        path.write_text(output, encoding="utf-8")
+        return path
+
+    def persisted_output_path(self, output: str) -> str | None:
+        """从已压缩占位中还原落盘路径;不信任 tool_results_dir 之外的路径。"""
+        candidate = None
+        if output.startswith("<persisted-output>\n"):
+            candidate = next(
+                (line.removeprefix("Full output: ")
+                 for line in output.splitlines()
+                 if line.startswith("Full output: ")),
+                None,
+            )
+        prefix = "[Earlier tool result saved at "
+        if output.startswith(prefix) and output.endswith("]"):
+            candidate = output.removeprefix(prefix).removesuffix("]")
+        if not candidate:
+            return None
+        path = Path(candidate)
+        if (not path.resolve().is_relative_to(self.tool_results_dir.resolve())
+                or not path.is_file()):
+            return None
+        return str(path)
+
+    def persisted_preview(self, tool_call_id: str, output: str,
+                          preview_chars: int = 2000) -> str:
+        saved_path = self.persisted_output_path(output)
+        if saved_path:
+            path = Path(saved_path)
+            try:
+                with path.open(encoding="utf-8") as saved:
+                    preview = saved.read(preview_chars)
+            except OSError:
+                preview = output[:preview_chars]
+        else:
+            path = self.save_output(tool_call_id, output)
+            preview = output[:preview_chars]
+        return (f"<persisted-output>\nFull output: {path}\n"
+                f"Preview:\n{preview}\n</persisted-output>")
+
+    def persist_large_output(self, tool_call_id: str, output: str) -> str:
+        if len(output) <= self.LARGE_RESULT_CHAR_LIMIT:
+            return output
+        return self.persisted_preview(tool_call_id, output)
