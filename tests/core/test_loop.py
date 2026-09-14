@@ -35,13 +35,14 @@ def text_msg(text):
 
 
 def make_harness(scripted, tools=None, hooks=None, compactor=None,
-                 todo_manager=None, memory=None, jobs=None, agents=None):
+                 todo_manager=None, memory=None, jobs=None, agents=None,
+                 extensions=None):
     cfg = Config(api_key="k", base_url=None, model="m", workdir=".")
     reg = ToolRegistry()
     for t in (tools or []):
         reg.register(t)
     return Harness(cfg, MockProvider(scripted), reg, hooks or HookBus(),
-                   compactor, todo_manager, memory, jobs, agents)
+                   compactor, todo_manager, memory, jobs, agents, extensions)
 
 
 def test_loop_stops_on_plain_text():
@@ -400,3 +401,17 @@ def test_loop_dispatches_task_tool():
     tool_results = [m for m in messages if m["role"] == "tool"]
     assert tool_results[0]["content"] == "sub-result"
     assert seen == ["explore"]
+
+
+def test_harness_system_prompt_includes_skill_catalog(tmp_path):
+    from blh.extensions import Extensions
+    from blh.extensions.mcp import MCPRegistry
+    from blh.extensions.skills import SkillLoader
+    (tmp_path / "skills" / "alpha").mkdir(parents=True)
+    (tmp_path / "skills" / "alpha" / "SKILL.md").write_text(
+        "---\nname: a\ndescription: 第一个\n---\nbody", encoding="utf-8")
+    skills = SkillLoader(tmp_path / "skills")
+    ext = Extensions(skills, MCPRegistry(ToolRegistry(), str(tmp_path)))
+    harness = make_harness([], extensions=ext)
+    assert "Skills available" in harness.system_prompt()
+    assert "a: 第一个" in harness.system_prompt()

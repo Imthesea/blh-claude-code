@@ -65,3 +65,13 @@ def test_build_harness_wires_agents(tmp_path, monkeypatch):
                  "request_shutdown", "request_plan", "review_plan",
                  "create_worktree"):
         assert name in names
+
+
+def test_build_harness_wires_extensions(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("OPENAI_API_KEY", "k")
+    harness = build_harness(workdir=str(tmp_path))
+    assert harness.extensions is not None
+    names = [s["function"]["name"] for s in harness.tools.schemas()]
+    assert "load_skill" in names
+    assert "connect_mcp" in names

@@ -11,6 +11,10 @@ from ..core.config import load_config
 from ..core.harness import Harness
 from ..core.hooks import PRE_TOOL_USE, HookBus
 from ..core.loop import last_assistant_text
+from ..extensions import Extensions
+from ..extensions.mcp import MCPRegistry
+from ..extensions.skills import SkillLoader
+from ..extensions.tools import register_extension_tools
 from ..jobs.background import BackgroundManager
 from ..jobs.cron import CronScheduler
 from ..jobs.runtime import JobsRuntime
@@ -67,8 +71,12 @@ def build_harness(workdir: str | None = None) -> Harness:
     )
     subagent = SubagentRunner(provider, config, hooks)
     register_agent_tools(tools, subagent, agents)
+    skills = SkillLoader(wd / "skills")
+    mcp = MCPRegistry(tools, config.workdir)
+    register_extension_tools(tools, skills, mcp)
+    extensions = Extensions(skills, mcp)
     return Harness(config, provider, tools, hooks, compactor, todo_manager,
-                   memory, jobs, agents)
+                   memory, jobs, agents, extensions)
 
 
 def main() -> None:

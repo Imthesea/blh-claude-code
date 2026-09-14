@@ -22,3 +22,8 @@ def test_default_rules_deny_force_push():
     assert match_rule(DEFAULT_RULES, "bash", "git push --force origin main") == "deny"
     assert match_rule(DEFAULT_RULES, "bash", "ls -la") == "ask"
     assert match_rule(DEFAULT_RULES, "read_file", "a.py") == "allow"
+
+
+def test_mcp_tools_ask_by_default():
+    assert match_rule(DEFAULT_RULES, "mcp__docs__search", "") == "ask"
+    assert match_rule(DEFAULT_RULES, "connect_mcp", "") == "ask"

@@ -13,13 +13,15 @@ DEFAULT_RULES = [
     PermissionRule("bash", "git push --force*", "deny"),
     PermissionRule("bash", "rm -rf /*", "deny"),
     PermissionRule("bash", "*", "ask"),
+    PermissionRule("mcp__*", "*", "ask"),
+    PermissionRule("connect_mcp", "*", "ask"),
     PermissionRule("*", "*", "allow"),
 ]
 
 
 def match_rule(rules: list[PermissionRule], tool: str, target: str) -> str:
     for rule in rules:
-        if rule.tool not in (tool, "*"):
+        if rule.tool != "*" and not fnmatch.fnmatch(tool, rule.tool):
             continue
         if fnmatch.fnmatch(target, rule.pattern):
             return rule.action
