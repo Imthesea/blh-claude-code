@@ -37,8 +37,9 @@ from ..workflow.tools import register_workflow_tools
 from .repl import repl
 
 
-def build_harness(workdir: str | None = None) -> Harness:
-    config = load_config(workdir)
+def build_harness(workdir: str | None = None,
+                  cli: dict | None = None) -> Harness:
+    config = load_config(workdir, cli)
     provider = OpenAIProvider(config)
     tools = ToolRegistry()
     register_builtin_tools(tools, config)
@@ -94,9 +95,21 @@ def main() -> None:
     parser = argparse.ArgumentParser(prog="blh")
     parser.add_argument("-p", "--print", dest="prompt",
                         help="run a single prompt and print the reply")
+    parser.add_argument("--model")
+    parser.add_argument("--base-url", dest="base_url")
+    parser.add_argument("--workdir")
+    parser.add_argument("--bash-timeout", dest="bash_timeout", type=int)
+    parser.add_argument("--max-output-chars", dest="max_output_chars", type=int)
     args = parser.parse_args()
 
-    harness = build_harness()
+    cli = {}
+    for key in ("model", "base_url", "workdir", "bash_timeout",
+                "max_output_chars"):
+        value = getattr(args, key, None)
+        if value is not None:
+            cli[key] = value
+
+    harness = build_harness(workdir=args.workdir, cli=cli)
     if args.prompt:
         messages = harness.new_session()
         harness.run_turn(messages, args.prompt)

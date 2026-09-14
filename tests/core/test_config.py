@@ -1,6 +1,6 @@
 import pytest
 
-from blh.core.config import load_config
+from blh.core.config import ConfigError, load_config
 
 
 def test_load_config_from_env(monkeypatch, tmp_path):
@@ -46,4 +46,41 @@ def test_env_vars_take_precedence_over_dotenv(monkeypatch, tmp_path):
     monkeypatch.setenv("OPENAI_API_KEY", "sk-from-env")
     monkeypatch.chdir(tmp_path)
     assert load_config().api_key == "sk-from-env"
+
+
+def test_file_overrides_defaults(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("OPENAI_API_KEY", "k")
+    monkeypatch.delenv("BLH_MODEL", raising=False)
+    (tmp_path / ".blh.yaml").write_text(
+        "model: file-model\nmax_output_chars: 123\n", encoding="utf-8")
+    cfg = load_config()
+    assert cfg.model == "file-model"
+    assert cfg.max_output_chars == 123
+
+
+def test_env_overrides_file(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("OPENAI_API_KEY", "k")
+    monkeypatch.setenv("BLH_MODEL", "env-model")
+    (tmp_path / ".blh.yaml").write_text("model: file-model\n", encoding="utf-8")
+    cfg = load_config()
+    assert cfg.model == "env-model"
+
+
+def test_cli_overrides_all(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("OPENAI_API_KEY", "k")
+    monkeypatch.setenv("BLH_MODEL", "env-model")
+    (tmp_path / ".blh.yaml").write_text("model: file-model\n", encoding="utf-8")
+    cfg = load_config(cli={"model": "cli-model"})
+    assert cfg.model == "cli-model"
+
+
+def test_invalid_int_raises_config_error(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("OPENAI_API_KEY", "k")
+    monkeypatch.setenv("BLH_BASH_TIMEOUT", "abc")
+    with pytest.raises(ConfigError):
+        load_config()
 

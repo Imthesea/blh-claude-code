@@ -1,5 +1,9 @@
 import json
+import sys
 
+import pytest
+
+from blh.cli import main as main_module
 from blh.cli.main import build_harness
 
 
@@ -85,3 +89,19 @@ def test_build_harness_wires_workflow_and_goal(tmp_path, monkeypatch):
     assert harness.workflow is not None
     names = [s["function"]["name"] for s in harness.tools.schemas()]
     assert "run_workflow" in names
+
+
+def test_main_passes_cli_flags_to_build_harness(monkeypatch):
+    captured = {}
+
+    def fake_build_harness(workdir=None, cli=None):
+        captured["workdir"] = workdir
+        captured["cli"] = cli
+        raise SystemExit(0)
+
+    monkeypatch.setattr(main_module, "build_harness", fake_build_harness)
+    monkeypatch.setattr(sys, "argv",
+                        ["blh", "--model", "x", "--bash-timeout", "99"])
+    with pytest.raises(SystemExit):
+        main_module.main()
+    assert captured["cli"] == {"model": "x", "bash_timeout": 99}
