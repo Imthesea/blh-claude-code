@@ -13,9 +13,10 @@ def register_builtin_tools(registry: ToolRegistry, config: Config) -> None:
         name="bash",
         description="Run a shell command in the workdir. Returns stdout+stderr.",
         parameters={"type": "object",
-                    "properties": {"command": {"type": "string"}},
+                    "properties": {"command": {"type": "string"},
+                                   "run_in_background": {"type": "boolean"}},
                     "required": ["command"]},
-        handler=lambda command: bash_mod.run_bash(
+        handler=lambda command, run_in_background=False: bash_mod.run_bash(
             command, wd, timeout, max_output),
     ))
     registry.register(Tool(

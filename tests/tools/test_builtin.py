@@ -23,3 +23,9 @@ def test_builtin_dispatch_roundtrip(tmp_path):
     assert "wrote" in out
     out = reg.dispatch("read_file", json.dumps({"path": "x.txt"}))
     assert "hello" in out
+
+
+def test_bash_has_run_in_background_param(tmp_path):
+    reg = make_registry(tmp_path)
+    bash = next(s for s in reg.schemas() if s["function"]["name"] == "bash")
+    assert "run_in_background" in bash["function"]["parameters"]["properties"]

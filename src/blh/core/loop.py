@@ -16,6 +16,8 @@ def agent_loop(harness, messages: list[dict], active_request: str = "") -> None:
         if compactor is not None:
             messages[:] = compactor.prepare(messages, active_request)
             _restore_system(messages, system_message)
+        if harness.jobs is not None:
+            harness.jobs.inject_background_results(messages)
         try:
             assistant = harness.provider.chat(messages, harness.tools.schemas())
             reactive_retries = 0
@@ -47,6 +49,18 @@ def agent_loop(harness, messages: list[dict], active_request: str = "") -> None:
                 # compact 由 loop 拦截:先闭合本批次,再压缩,不走 dispatch/hooks
                 result = "Compaction requested after this tool batch."
                 compact_requested = True
+            elif (harness.jobs is not None and name == "bash"
+                    and event["input"].get("run_in_background") is True):
+                blocked = harness.hooks.first_block(PRE_TOOL_USE, event)
+                if blocked is not None:
+                    result = blocked
+                else:
+                    try:
+                        result = harness.jobs.start_background(
+                            event["input"].get("command", ""))
+                    except Exception as error:  # noqa: BLE001 - 后台启动失败作为工具错误返回
+                        result = f"error: {error}"
+                    harness.hooks.trigger(POST_TOOL_USE, event, result)
             else:
                 blocked = harness.hooks.first_block(PRE_TOOL_USE, event)
                 if blocked is not None:

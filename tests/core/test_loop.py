@@ -35,13 +35,13 @@ def text_msg(text):
 
 
 def make_harness(scripted, tools=None, hooks=None, compactor=None,
-                 todo_manager=None, memory=None):
+                 todo_manager=None, memory=None, jobs=None):
     cfg = Config(api_key="k", base_url=None, model="m", workdir=".")
     reg = ToolRegistry()
     for t in (tools or []):
         reg.register(t)
     return Harness(cfg, MockProvider(scripted), reg, hooks or HookBus(),
-                   compactor, todo_manager, memory)
+                   compactor, todo_manager, memory, jobs)
 
 
 def test_loop_stops_on_plain_text():
@@ -317,3 +317,46 @@ def test_run_turn_consolidates_after_extract():
     h.run_turn(h.new_session(), "hi")
     assert memory.extracted is not None
     assert memory.consolidated
+
+
+def test_loop_starts_background_bash(tmp_path):
+    from blh.jobs.background import BackgroundManager
+    from blh.jobs.cron import CronScheduler
+    from blh.jobs.runtime import JobsRuntime
+    jobs = JobsRuntime(BackgroundManager(str(tmp_path)),
+                       CronScheduler(tmp_path / ".scheduled_tasks.json"))
+    tool = Tool("bash", "", {"type": "object",
+                             "properties": {"command": {"type": "string"},
+                                            "run_in_background": {"type": "boolean"}},
+                             "required": ["command"]},
+                handler=lambda command, run_in_background=False: "SYNC")
+    h = make_harness(
+        [tool_call_msg("c1", "bash",
+                       {"command": "echo hi", "run_in_background": True}),
+         text_msg("done")],
+        tools=[tool], jobs=jobs,
+    )
+    messages = h.new_session()
+    h.run_turn(messages, "go")
+    tool_results = [m for m in messages if m["role"] == "tool"]
+    assert "Background task bg_" in tool_results[0]["content"]
+
+
+def test_loop_injects_background_results(tmp_path):
+    import time
+
+    from blh.jobs.background import BackgroundManager
+    from blh.jobs.cron import CronScheduler
+    from blh.jobs.runtime import JobsRuntime
+    jobs = JobsRuntime(BackgroundManager(str(tmp_path)),
+                       CronScheduler(tmp_path / ".scheduled_tasks.json"))
+    jobs.background.start("echo hello")
+    deadline = time.monotonic() + 5
+    while any(t["status"] == "running"
+              for t in jobs.background.tasks.values()) and time.monotonic() < deadline:
+        time.sleep(0.01)
+    h = make_harness([text_msg("done")], jobs=jobs)
+    messages = h.new_session()
+    h.run_turn(messages, "continue")
+    user_messages = [m for m in messages if m["role"] == "user"]
+    assert any("<task_notification>" in m["content"] for m in user_messages)
