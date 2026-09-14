@@ -181,7 +181,7 @@ class ContextCompactor:
                    if m.get("role") == "tool"]
         unseen = self.unseen_tool_result_positions(messages)
         consumed = [entry for entry in results if entry[0] not in unseen]
-        for _, msg in consumed[:-self.KEEP_RECENT_RESULTS]:
+        for _, msg in consumed[:max(0, len(consumed) - self.KEEP_RECENT_RESULTS)]:
             if (target_chars is not None
                     and self.estimate_chars(messages) <= target_chars):
                 break
@@ -210,3 +210,55 @@ class ContextCompactor:
             if len(replacement) < len(output):
                 msg["content"] = replacement
         return messages
+
+    def summary_input(self, messages: list[dict]) -> str:
+        conversation = json.dumps(messages, default=str, ensure_ascii=False)
+        if len(conversation) <= self.SUMMARY_INPUT_CHAR_LIMIT:
+            return conversation
+        head = self.SUMMARY_INPUT_CHAR_LIMIT // 4
+        tail = self.SUMMARY_INPUT_CHAR_LIMIT - head
+        return (conversation[:head]
+                + "\n...[middle omitted; full transcript is on disk]...\n"
+                + conversation[-tail:])
+
+    def summarize_history(self, messages: list[dict]) -> str:
+        response = self.provider.chat(
+            [{"role": "system", "content": SUMMARY_SYSTEM},
+             {"role": "user", "content": self.summary_input(messages)}],
+            tools=[],
+        )
+        return (response.get("content") or "").strip() or "(empty summary)"
+
+    @staticmethod
+    def summary_message(label: str, request: str, summary: str,
+                        transcript: Path) -> dict:
+        return {"role": "user", "content": (
+            f"[{label}]\n\nCurrent user request:\n{request}\n\n"
+            f"Conversation summary (reference only):\n"
+            f"{json.dumps(summary, ensure_ascii=False)}\n\n"
+            f"Full transcript: {transcript}"
+        )}
+
+    def compact_history(self, messages: list[dict],
+                        active_request: str) -> list[dict]:
+        transcript = self.write_transcript(messages)
+        print(f"[transcript saved: {transcript}]")
+        summary = self.summarize_history(messages)
+        return [self.summary_message(
+            "Compacted", active_request, summary, transcript)]
+
+    def reactive_compact(self, messages: list[dict],
+                         active_request: str) -> list[dict]:
+        """API 拒绝后的补救:留档全量,摘要旧历史,保留最近 KEEP_RECENT_MESSAGES 条。"""
+        transcript = self.write_transcript(messages)
+        print(f"[transcript saved: {transcript}]")
+        tail_start = max(0, len(messages) - self.KEEP_RECENT_MESSAGES)
+        if tail_start > 0 and self.is_tool_result(messages[tail_start]):
+            while tail_start > 1 and self.is_tool_result(messages[tail_start - 1]):
+                tail_start -= 1
+            tail_start -= 1
+        old_history = messages[:tail_start] if tail_start else messages
+        summary = self.summarize_history(old_history)
+        message = self.summary_message(
+            "Reactive compact", active_request, summary, transcript)
+        return [message, *messages[tail_start:]] if tail_start else [message]
